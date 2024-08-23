@@ -1,0 +1,102 @@
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.hardware.Sensor;
+import android.hardware.SensorManager;
+import android.location.Location;
+import android.location.LocationManager;
+import android.os.Bundle;
+import android.telephony.SmsManager;
+import android.widget.Toast;
+
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.Task;
+
+public class MainActivity extends Activity {
+    private SensorManager mSensorManager;
+    private Sensor mAccelerometer;
+    private ShakeDetector mShakeDetector;
+    private FusedLocationProviderClient mFusedLocationClient;
+    private LocationCallback mLocationCallback;
+    private LocationRequest mLocationRequest;
+    private SharedPreferences mSharedPreferences;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        mAccelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        mShakeDetector = new ShakeDetector();
+        mShakeDetector.setOnShakeListener(new ShakeDetector.OnShakeListener() {
+            @Override
+            public void onShake(int count) {
+                if (count == 3) {
+                    vibrate();
+                    sendSOS();
+                }
+            }
+        });
+
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        mLocationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                if (locationResult != null) {
+                    Location location = locationResult.getLastLocation();
+                    shareLocation(location);
+                }
+            }
+        };
+        mLocationRequest = new LocationRequest();
+        mLocationRequest.setInterval(10000);
+        mLocationRequest.setFastestInterval(5000);
+        mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+
+        mSharedPreferences = getSharedPreferences("user_data", MODE_PRIVATE);
+    }
+
+    private void vibrate() {
+        Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        vibrator.vibrate(1000);
+    }
+
+    private void sendSOS() {
+        // Get current location
+        mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallback, null);
+
+        // Get user information
+        String userName = mSharedPreferences.getString("user_name", "");
+        String userVehicleInfo = mSharedPreferences.getString("user_vehicle_info", "");
+
+        // Send SOS message to nearby emergency services
+        SmsManager smsManager = SmsManager.getDefault();
+        String message = "Vehicle crash detected! Location: " + getLocationString() + ". User: " + userName + ". Vehicle: " + userVehicleInfo;
+        smsManager.sendTextMessage("911", null, message, null, null);
+        smsManager.sendTextMessage("nearby police station", null, message, null, null);
+        smsManager.sendTextMessage("nearby hospital", null, message, null, null);
+        smsManager.sendTextMessage("nearby fire station", null, message, null, null);
+    }
+
+    private void shareLocation(Location location) {
+        // Share location with nearby police station and ambulance
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TEXT, "Vehicle crash location: " + location.getLatitude() + ", " + location.getLongitude());
+        startActivity(Intent.createChooser(intent, "Share location"));
+    }
+
+    private String getLocationString() {
+        LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        String locationProvider = LocationManager.GPS_PROVIDER;
+        Location location = locationManager.getLastKnownLocation(locationProvider);
+        return location.getLatitude() + ", " + location.getLongitude();
+    }
+}
